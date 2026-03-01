@@ -1,12 +1,12 @@
 # Python imports
 from __future__ import annotations
-from typing import Any
+from typing import Any, Optional
 
 # Local imports
 from .not_found_flag import NotFoundFlag
 
 
-def get_dict_value_by_path(path: str, data: dict[str, Any]) -> dict[str, Any] | NotFoundFlag | None:
+def get_dict_value_by_path(path: str, data: dict[str, Any]) -> Optional[dict[str, Any] | NotFoundFlag | str]:
     """
     Navigate through a nested dictionary using a space-separated path and return the value.
 

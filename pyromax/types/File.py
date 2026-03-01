@@ -73,7 +73,7 @@ class BaseFile(BaseModel):
 
 class Photo(FormDataBodyMixin, BaseFile):
     photo_token: str = Field(default='', validation_alias='photoToken')
-    base_url: str | None = Field(default=None, validation_alias='baseUrl')
+    url: str | None = Field(default=None, validation_alias='baseUrl')
     photo_id: int | None = Field(default=None, validation_alias='photoId')
 
     _opcode: ClassVar[int] = Opcode.CREATE_PHOTO.value
@@ -114,9 +114,9 @@ class Video(DataBodyMixin, BaseFile):
 
 class File(DataBodyMixin, BaseFile):
     file_id: int = Field(default='', validation_alias='fileId')
+    file_name: str = Field(default='', validation_alias='name')
     file_size: int | None = Field(default=None, validation_alias='size')
     file_token: str = Field(default='', validation_alias='token')
-
     _opcode: ClassVar[int] = Opcode.CREATE_FILE.value
 
 
@@ -131,4 +131,23 @@ class File(DataBodyMixin, BaseFile):
 
 
     async def _parse_response(self, response):
+        self.uploaded = True
+
+
+class Audio(FormDataBodyMixin, BaseFile):
+    audio_token: str = Field(default='', validation_alias='token')
+    url: str | None = Field(default=None, validation_alias='url')
+    audio_id: int | None = Field(default=None, validation_alias='audioId')
+
+    _opcode: ClassVar[int] = Opcode.CREATE_FILE.value
+
+    async def create_cell_for_file(self):
+        response = await self.send_create_request()
+        self.url = response.get('payload', {}).get('url')
+
+    async def _parse_response(self, response):
+        print(response)
+        audios = (await response.json())['audios']
+        audio_id = list(audios.keys())[0]
+        self.photo_token = audios[audio_id]['token']
         self.uploaded = True

@@ -1,4 +1,4 @@
-from .File import Video, Photo, File
+from .File import Video, Photo, File, Audio
 from pyromax.mixins.ReplyMixin import ReplyMixin
 from .Update import Update
 from .OpcodeEnum import Opcode
@@ -29,11 +29,12 @@ class Message(Update, ReplyMixin):
 
     @field_validator('attaches', mode='after')
     @classmethod
-    def attaches_to_model(cls, attaches: list) -> list[Video | Photo | File]:
+    def attaches_to_model(cls, attaches: list) -> list[Video | Photo | File | Audio]:
         types_of_attaches = {
             'VIDEO': Video,
             'PHOTO': Photo,
             'FILE': File,
+            'AUDIO': Audio,
         }
 
         attaches_valid = []

@@ -1,31 +1,42 @@
 import asyncio
 import logging
-import time
+import pathlib
 import string
-from typing import List, TypeVar
-from websockets.exceptions import ConnectionClosedOK, WebSocketException
-import qrcode
+import time
+import uuid
+from pathlib import Path
+from typing import List, TypeVar, Optional, Union, Dict
 
-from pyromax.utils import get_random_string
-from pyromax.utils import get_dict_value_by_path
+import aiofiles
+import aiohttp
+import qrcode
+from aiohttp import ClientTimeout
+from websockets.exceptions import ConnectionClosedOK, WebSocketException
+
 from pyromax.api import MaxClient
-from pyromax.types import Chat, Opcode, Video, File, Photo
-from pyromax.exceptions import LoggingError, LoggingTimeoutError, SendMessageError, SendMessageFileError, SendMessageNotFoundError
+from pyromax.exceptions import LoggingError, LoggingTimeoutError, SendMessageError, SendMessageFileError, \
+    SendMessageNotFoundError
 from pyromax.mixins import AsyncInitializerMixin
+from pyromax.types import Chat, Opcode, Video, File, Photo, Audio
+from pyromax.utils import get_dict_value_by_path
+from pyromax.utils import get_random_string
 from pyromax.utils.write_token import read_token, write_token
 
 # pprint(dir(Connection))
 
 T = TypeVar('T')
+root_dir = Path.cwd()
 
 
 class MaxApi(AsyncInitializerMixin):
-    async def _async_init(self, *args, device_id: str = None, token: str = None, global_context: dict[type[T], T] = None, ping_interval = 30, **kwargs):
+    async def _async_init(self, *args, device_id: str = None, token: str = None,
+                          global_context: dict[type[T], T] = None, ping_interval=30, **kwargs):
         if not global_context:
             default_args = {}
 
         token = await read_token()
-        self.__init__(device_id=device_id, token=token, global_context=global_context, ping_interval=ping_interval, *args, **kwargs)
+        self.__init__(device_id=device_id, token=token, global_context=global_context, ping_interval=ping_interval,
+                      *args, **kwargs)
 
         while True:
             try:
@@ -37,7 +48,6 @@ class MaxApi(AsyncInitializerMixin):
                 await self.detach()
                 self.__logger.info('WebSocket cannot init, retrying...')
         self.__logger.info('MaxApi get ready for use')
-
 
     async def reload_if_connection_broke(self, dispatcher):
         while True:
@@ -57,7 +67,6 @@ class MaxApi(AsyncInitializerMixin):
             except WebSocketException:
                 await self.max_client.kill_pending()
 
-
                 for task in tasks:
                     if not task.done():
                         task.cancel()
@@ -69,9 +78,8 @@ class MaxApi(AsyncInitializerMixin):
                 await self.send_user_agent()
                 await self._authorize()
 
-
-
-    def __init__(self, device_id: str = None, token: str = None, ping_interval = 30, global_context=None, *args, **kwargs) -> None:
+    def __init__(self, device_id: str = None, token: str = None, ping_interval=30, global_context=None, *args,
+                 **kwargs) -> None:
         if not global_context:
             global_context = {}
         self.__max_client: MaxClient | None = None
@@ -112,16 +120,14 @@ class MaxApi(AsyncInitializerMixin):
 
     async def attach(self) -> None:
         if not self.max_client:
-            self.max_client = await MaxClient(max_api = self)
+            self.max_client = await MaxClient(max_api=self)
             self.start_time = time.time()
-
 
     async def detach(self):
         if self.max_client:
             await self.max_client.close_websocket()
             self.max_client = None
         return self.__token, self.device_id, self._ping_interval
-
 
     async def _keepalive(self):
         self.__logger.info('Starting keepalive')
@@ -142,14 +148,13 @@ class MaxApi(AsyncInitializerMixin):
 
         return ''.join(random_string)
 
-
     async def send_user_agent(self) -> tuple[int, int, int, str] | None:
         await self.max_client.send_and_receive(opcode=Opcode.SEND_USER_AGENT.value, payload={
             "userAgent": {"deviceType": "WEB", "locale": "ru", "deviceLocale": "ru", "osVersion": "Alpha",
                           "deviceName": "MaxBot",
                           "headerUserAgent": 'Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0',
                           "appVersion": "25.12.14", "screen": "1440x2560 1.0x", "timezone": "Europe/Moscow"},
-            "deviceId": self.device_id},)
+            "deviceId": self.device_id}, )
 
         if self.client_is_login:
             return
@@ -164,7 +169,6 @@ class MaxApi(AsyncInitializerMixin):
         url = payload['qrLink']
 
         return polling_interval, track_id, expires_at, url
-
 
     async def login(self):
         async def url_callback_for_login_url(url: str):
@@ -203,7 +207,8 @@ class MaxApi(AsyncInitializerMixin):
                 async with asyncio.timeout(expires_at - time.time()):
                     while not self.client_is_login:
 
-                        response = await self.max_client.send_and_receive(opcode=Opcode.TRACK_LOGIN.value, payload={"trackId": self._track_id})
+                        response = await self.max_client.send_and_receive(opcode=Opcode.TRACK_LOGIN.value,
+                                                                          payload={"trackId": self._track_id})
                         if response[0][0]["payload"]["status"].get("loginAvailable") is True:
                             self.__logger.info('Login Successful')
                             self.client_is_login = True
@@ -219,7 +224,6 @@ class MaxApi(AsyncInitializerMixin):
             self.__logger.info('Login Failed')
             raise LoggingError('Connection closed')
 
-
     async def _parse_user_data(self, response: dict) -> None:
         contact = get_dict_value_by_path('payload profile contact', response)
         names = get_dict_value_by_path('names', contact)
@@ -233,19 +237,20 @@ class MaxApi(AsyncInitializerMixin):
 
     async def _get_user_data(self) -> None:
         self.__logger.info('Getting User Data...')
-        response = await self.max_client.send_and_receive(opcode=Opcode.GET_USER_DATA.value, payload={'trackId': self._track_id})
+        response = await self.max_client.send_and_receive(opcode=Opcode.GET_USER_DATA.value,
+                                                          payload={'trackId': self._track_id})
         self.__token = get_dict_value_by_path('payload tokenAttrs LOGIN token', response[0][0])
         await self._parse_user_data(response)
 
     async def _authorize(self) -> None:
         self.__logger.info('Sending authorize request...')
 
-        response, seq = await self.max_client.send_and_receive(opcode=Opcode.AUTHORIZE.value, payload = {
+        response, seq = await self.max_client.send_and_receive(opcode=Opcode.AUTHORIZE.value, payload={
             'interactive': False,
             'token': self.__token,
         })
 
-        await self.max_client.wait_recv(seq - 1, cmd = 0)
+        await self.max_client.wait_recv(seq - 1, cmd=0)
         token = get_dict_value_by_path('payload token', response[0])
         if token:
             self.__token = str(token)
@@ -259,8 +264,7 @@ class MaxApi(AsyncInitializerMixin):
         self.chats = chats
         self.__logger.info('Authorized')
 
-
-    async def get_chat_per_id(self, chat_id: int):
+    async def get_chat_per_id(self, chat_id: str):
         self.__logger.info('Getting chat info...')
         response = await self.max_client.send_and_receive(opcode=Opcode.GET_CHAT.value, payload={
             'chatIds': [chat_id],
@@ -272,17 +276,20 @@ class MaxApi(AsyncInitializerMixin):
 
         return Chat(**response['payload']['chats'][0], max_api=self)
 
-    async def send_message(self, chat_id: int, text: str, attaches: List[Video | File | Photo] = [], other_message_elements: dict = None):
+    async def send_message(self, chat_id: int, text: str, attaches: List[Video | File | Photo | Audio] = [],
+                           other_message_elements: dict = None):
         types_of_attachments = {
             Video: 'VIDEO',
             File: 'FILE',
             Photo: 'PHOTO',
+            Audio: 'AUDIO',
         }
 
         required_params_for_type = {
             'VIDEO': (('videoId', 'video_id'), ('token',)),
             'FILE': (('fileId', 'file_id'),),
             'PHOTO': (('photoToken', 'photo_token'),),
+            'AUDIO': (('token', 'audio_token'),),
         }
 
         loaded_attachments = []
@@ -347,18 +354,119 @@ class MaxApi(AsyncInitializerMixin):
                         '''
                     )
 
+    @classmethod
+    async def __preparation_data(cls, file: Union[File, Video, Photo, Audio], chat_id: int, message_id: str) -> tuple[
+                                                                                                             str, int, dict] | None:
 
+        if isinstance(file, Photo) or isinstance(file, Audio):
+            return None
+
+
+        elif isinstance(file, File):
+            path_for_url = "payload url"
+            opcode: int = Opcode.DOWNLOAD_FILE.value
+            payload: Dict = {
+                "fileId": file.file_id,
+                "chatId": chat_id,
+                "messageId": message_id
+            }
+        elif isinstance(file, Video):
+            path_for_url = "payload MP4_720"
+
+            opcode: int = Opcode.DOWNLOAD_VIDEO.value
+            payload = {
+                "videoId": file.video_id,
+                "chatId": chat_id,
+                "messageId": message_id
+            }
+
+        else:
+            raise TypeError("Unknown media type")
+
+        final_result = (path_for_url, opcode, payload)
+
+        return final_result
+
+    @classmethod
+    async def __download_file(cls, url: str, path_for_upload: Optional[str | Path] = None) -> Union[
+        bytes, str]:
+        """
+
+        Args:
+            url: url for download
+
+            path_for_upload: path for save file if None, then it is saved in a byte stream
+
+        Returns:
+
+        """
+
+        chunks: list[bytes] = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0",
+            "Accept": "*/*",
+            "Referer": "https://ok.ru/",
+        }
+
+        cookies = {
+            "tstc": "p"
+        }
+        # Для видео передаю заголовки и куки, т.к видео с серваков одноклассников
+        async with aiohttp.ClientSession(headers=headers, cookies=cookies, timeout=ClientTimeout(total=60)) as session:
+            async with session.get(url) as response:
+
+                if response.status != 200:
+                    raise RuntimeError("Download failed")
+
+                if path_for_upload:
+                    pth_upload = pathlib.Path(path_for_upload)
+                    filename = response.headers.get("X-File-Name")
+                    if filename is None or pathlib.Path.exists(pth_upload / filename):
+                        filename_first = f"{uuid.uuid4()}"
+                    else:
+                        filename_first = filename
+                    async with aiofiles.open(pth_upload / filename_first, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            await f.write(chunk)
+                    return filename_first
+                else:
+                    async for chunk in response.content.iter_chunked(8192):
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+
+    async def download_file(self, file: Union[Photo, Audio, File, Video], chat_id: int, message_id: str,
+                            path_for_download: Optional[str | Path] = None) -> Union[bytes, str]:
+
+        """
+
+        Args:
+            file: file object
+            chat_id: chat id for download
+            message_id: message id for download
+            path_for_download: path for download file
+        Returns:
+
+        """
+        data_for_get_url = await self.__preparation_data(file, chat_id, message_id)
+        if data_for_get_url:
+            path_for_url, opcode, payload = data_for_get_url[0], data_for_get_url[1], data_for_get_url[2]
+
+            response = await self.max_client.send_and_receive(opcode=opcode, payload=payload)
+
+            url_for_download = get_dict_value_by_path(
+                path=path_for_url,
+                data=response[0][0],
+            )
+        else:
+            url_for_download = file.url
+        result = await self.__download_file(url=url_for_download,
+                                            path_for_upload=path_for_download)
+        return result
 
 
 async def main():
     logging.basicConfig(level=logging.INFO)
 
 
-
-
-
-
 if __name__ == '__main__':
     asyncio.run(main())
-
-
