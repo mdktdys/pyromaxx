@@ -146,7 +146,6 @@ class Audio(FormDataBodyMixin, BaseFile):
         self.url = response.get('payload', {}).get('url')
 
     async def _parse_response(self, response):
-        print(response)
         audios = (await response.json())['audios']
         audio_id = list(audios.keys())[0]
         self.photo_token = audios[audio_id]['token']
