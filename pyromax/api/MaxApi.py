@@ -21,6 +21,7 @@ from pyromax.types import Chat, Opcode, Video, File, Photo, Audio
 from pyromax.utils import get_dict_value_by_path
 from pyromax.utils import get_random_string
 from pyromax.utils.write_token import read_token, write_token
+from pyromax.utils import clean_and_map
 
 # pprint(dir(Connection))
 
@@ -262,7 +263,6 @@ class MaxApi(AsyncInitializerMixin):
             if not names:
                 names = [{}]
 
-            pprint(contact)
             contacts.append({
                 'base_url': get_dict_value_by_path('baseUrl', contact),
                 'id': get_dict_value_by_path('id', contact),
@@ -318,8 +318,13 @@ class MaxApi(AsyncInitializerMixin):
 
         return Chat(**response['payload']['chats'][0], max_api=self)
 
-    async def send_message(self, chat_id: int, text: str, attaches: List[Video | File | Photo | Audio] = [],
+    async def send_message(self, chat_id: int, text: str, attaches: List[Video | File | Photo | Audio] = None,
                            other_message_elements: dict = None):
+
+        if attaches is None:
+            attaches = []
+
+
         types_of_attachments = {
             Video: 'VIDEO',
             File: 'FILE',
@@ -350,18 +355,29 @@ class MaxApi(AsyncInitializerMixin):
 
             loaded_attachments.append(payload)
 
+        text, elements = clean_and_map(text, ['STRONG', 'EMPHASIZED', 'UNDERLINE', 'STRIKETHROUGH', 'QUOTE', 'LINK'])
+
+
+
         payload = {
             'chatId': chat_id,
             'message': {
                 'cid': -round(time.time() * 1000),
                 'attaches': loaded_attachments,
+                'elements': elements,
             },
         }
+
+
+
+
         if other_message_elements:
             payload['message'].update(other_message_elements)
 
         if text:
             payload['message']['text'] = text
+
+
 
         response = await self.max_client.send_and_receive(opcode=Opcode.SEND_MESSAGE.value, payload=payload)
         while error_if_exist := get_dict_value_by_path('payload error', response):
