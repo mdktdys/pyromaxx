@@ -35,7 +35,9 @@ class MaxApi(AsyncInitializerMixin):
         if not global_context:
             default_args = {}
 
-        token = await read_token()
+        if token is None:
+            token = await read_token()
+            
         self.__init__(device_id=device_id, token=token, global_context=global_context, ping_interval=ping_interval,
                       *args, **kwargs)
 
