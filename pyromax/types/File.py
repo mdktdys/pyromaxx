@@ -80,7 +80,7 @@ class Photo(FormDataBodyMixin, BaseFile):
 
     async def create_cell_for_file(self):
         response = await self.send_create_request()
-        self.url = response.get('payload', {}).get('url')
+        self.url = response[0][0].get('payload', {}).get('url')
 
     async def _parse_response(self, response):
         photos = (await response.json())['photos']
